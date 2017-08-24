@@ -13,6 +13,7 @@ class Token
     @token_type = token_type
   end
 
+# Replace instance with a new token
   def refresh!(access_token, expires_in, refresh_token)
     @access_token = access_token
     @timestamp = Time.now
@@ -20,10 +21,12 @@ class Token
     @refresh_token = refresh_token
   end
 
+# Check if the token has expired
   def expired?
     Time.now > @timestamp + @expires_in
   end
 
+# Return a json representation of the token
   def to_json
     hash = {
       access_token: @access_token,

@@ -21,6 +21,7 @@ class NibeUplink
     )
   end
 
+# Send authorization code to get a token for the first time
   def authorize(auth_code, callback_url, permissions = 'r')
     scope = case permissions.downcase
             when 'rw' then 'READSYSTEM+WRITESYSTEM'
@@ -31,6 +32,7 @@ class NibeUplink
     @oauth.authorize(auth_code, callback_url, scope)
   end
 
+# Get info on the current system
   def system
     return false unless @system_id
     uri = "#{API_ENDPOINT}/#{@system_id}"
@@ -38,12 +40,14 @@ class NibeUplink
     JSON.parse(response)
   end
 
+# List all systems connected to the account
   def systems
     uri = "#{API_ENDPOINT}"
     response = @oauth.get(uri).body
     JSON.parse(response)
   end
 
+# Get info and current values of the requested parameters
   def parameters(parameters)
     return false unless @system_id
     uri = "#{API_ENDPOINT}/#{@system_id}/parameters"
@@ -51,6 +55,7 @@ class NibeUplink
     JSON.parse(response)
   end
 
+# Get notifications/alarms registered on the system
   def notifications
     return false unless @system_id
     uri = "#{API_ENDPOINT}/#{@system_id}/notifications"
@@ -58,6 +63,8 @@ class NibeUplink
     JSON.parse(response)
   end
 
+# Get info on the system if arg is set to true it returns parameters for all systems,
+# if set to a valid category, returns info on only that category
   def serviceinfo(arg = false)
     return false unless @system_id
     uri = "#{API_ENDPOINT}/#{@system_id}/serviceinfo/categories"
