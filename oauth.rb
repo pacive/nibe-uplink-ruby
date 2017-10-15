@@ -41,12 +41,30 @@ class OAuth
   end
 
 # Sent a Http GET request to path, using token as authorization
-  def get(path, parameters = nil)
+  def get(path, parameters = nil, extheader = {})
     load_token unless @token
 
-    header = { 'Authorization' => "Bearer #{@token.access_token}" }
+    header = { 'Authorization' => "Bearer #{@token.access_token}" }.merge(extheader)
 
     @http.get(@base_url + path, parameters, header)
+  end
+
+# Send a Http POST request to path, using token as authorization
+  def post(path, parameters = '', extheader = {})
+    load_token unless @token
+
+    header = { 'Authorization' => "Bearer #{@token.access_token}" }.merge(extheader)
+
+    @http.post(@base_url + path, parameters, header)
+  end
+
+# Send a Http PUT request to path, using token as authorization
+def put(path, parameters = '', extheader = {})
+    load_token unless @token
+
+    header = { 'Authorization' => "Bearer #{@token.access_token}" }.merge(extheader)
+
+    @http.put(@base_url + path, parameters, header)
   end
 
   private
