@@ -16,7 +16,7 @@ class OAuth
     load_token if File.exist?("./#{@file_name}")
   end
 
-# Send authorization code to get a token for the first time
+  # Send authorization code to get a token for the first time
   def authorize(authorization_code, callback_url, scope)
     post_body = {
       'grant_type' => 'authorization_code',
@@ -40,7 +40,7 @@ class OAuth
     puts e.message
   end
 
-# Sent a Http GET request to path, using token as authorization
+  # Sent a Http GET request to path, using token as authorization
   def get(path, parameters = nil, extheader = {})
     load_token unless @token
 
@@ -49,7 +49,7 @@ class OAuth
     @http.get(@base_url + path, parameters, header)
   end
 
-# Send a Http POST request to path, using token as authorization
+  # Send a Http POST request to path, using token as authorization
   def post(path, parameters = '', extheader = {})
     load_token unless @token
 
@@ -58,8 +58,8 @@ class OAuth
     @http.post(@base_url + path, parameters, header)
   end
 
-# Send a Http PUT request to path, using token as authorization
-def put(path, parameters = '', extheader = {})
+  # Send a Http PUT request to path, using token as authorization
+  def put(path, parameters = '', extheader = {})
     load_token unless @token
 
     header = { 'Authorization' => "Bearer #{@token.access_token}" }.merge(extheader)
@@ -69,7 +69,7 @@ def put(path, parameters = '', extheader = {})
 
   private
 
-# Load token from file and renew it if it has expired
+  # Load token from file and renew it if it has expired
   def load_token
     data = File.read("./#{@file_name}")
     @token = decrypt_token(data)
@@ -80,14 +80,14 @@ def put(path, parameters = '', extheader = {})
     puts e.message
   end
 
-# Save token to file
+  # Save token to file
   def save_token
     data = encrypt_token
     File.write("./#{@file_name}", data)
     File.chmod(0o0600, "./#{@file_name}")
   end
 
-# Request a new token using the refresh token
+  # Request a new token using the refresh token
   def refresh_token
     postdata = {
       'grant_type' => 'refresh_token',
@@ -105,7 +105,7 @@ def put(path, parameters = '', extheader = {})
     puts e.message
   end
 
-# Encrypt a string representation of the token
+  # Encrypt a string representation of the token
   def encrypt_token
     string = @token.to_json
     cipher = OpenSSL::Cipher::AES.new(128, :CBC)
@@ -115,7 +115,7 @@ def put(path, parameters = '', extheader = {})
     cipher.update(string) + cipher.final
   end
 
-# Decrypt an encrypted token
+  # Decrypt an encrypted token
   def decrypt_token(data)
     cipher = OpenSSL::Cipher::AES.new(128, :CBC)
     cipher.decrypt
