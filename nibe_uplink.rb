@@ -1,34 +1,42 @@
 # nibe_uplink.rb
+# frozen_string_literal: true
+
 require 'json'
-require 'yaml'
-require_relative 'oauth'
+require 'net/http'
+require 'simpleoauth'
+
+class NibeUplinkError < StandardError
+end
+
+class ServerError < NibeUplinkError
+end
+
+class AuthorizationError < NibeUplinkError
+end
+
+class RateLimitError < NibeUplinkError
+end
 
 # Class for interfacing with Nibe Uplink
 class NibeUplink
-  BASE_URL = 'https://api.nibeuplink.com'.freeze
-  TOKEN_ENDPOINT = '/oauth/token'.freeze
-  API_ENDPOINT = '/api/v1/systems'.freeze
+  BASE_URL = 'https://api.nibeuplink.com'
+  TOKEN_ENDPOINT = '/oauth/token'
+  API_ENDPOINT = '/api/v1/systems'
 
   attr_accessor :system_id
 
   def initialize(client_id, client_secret, system_id = nil)
     @system_id = system_id
-    @oauth = OAuth.new(
-      BASE_URL,
-      TOKEN_ENDPOINT,
-      client_id,
-      client_secret
-    )
+    @oauth = SimpleOAuth::Client.new(BASE_URL,
+                                     TOKEN_ENDPOINT,
+                                     client_id,
+                                     client_secret)
+
+    @oauth.load_token('/var/lib/misc/')
   end
 
   # Send authorization code to get a token for the first time
-  def authorize(auth_code, callback_url, permissions = 'r')
-    scope = case permissions.downcase
-            when 'rw' then 'READSYSTEM+WRITESYSTEM'
-            when 'w' then 'WRITESYSTEM'
-            else 'READSYSTEM'
-            end
-
+  def authorize(auth_code, callback_url, scope = 'READSYSTEM+WRITESYSTEM')
     @oauth.authorize(auth_code, callback_url, scope)
   end
 
@@ -36,51 +44,72 @@ class NibeUplink
   def system
     return false unless @system_id
     uri = "#{API_ENDPOINT}/#{@system_id}"
-    @oauth.get(uri).body
+    response = @oauth.get(uri)
+    raise AuthorizationError, response.body if response.is_a? Net::HTTPUnauthorized
+    raise RateLimitError if response.is_a? Net::HTTPTooManyRequests 
+    raise ServerError if response.is_a? Net::HTTPServerError
+    response.body
   end
 
   # List all systems connected to the account
   def systems
-    uri = API_ENDPOINT
-    @oauth.get(uri).body
+    response = @oauth.get(API_ENDPOINT)
+    raise AuthorizationError, response.body if response.is_a? Net::HTTPUnauthorized
+    raise RateLimitError if response.is_a? Net::HTTPTooManyRequests 
+    raise ServerError if response.is_a? Net::HTTPServerError
+    response.body
   end
 
   # Get system status. Returns which subsystems are currently active
   def status
     return false unless @system_id
     uri = "#{API_ENDPOINT}/#{@system_id}/status/system"
-    @oauth.get(uri).body
+    response = @oauth.get(uri)
+    raise AuthorizationError, response.body if response.is_a? Net::HTTPUnauthorized
+    raise RateLimitError if response.is_a? Net::HTTPTooManyRequests 
+    raise ServerError if response.is_a? Net::HTTPServerError
+    response.body
   end
 
   # Get info on installed software and software updates
   def software
     return false unless @system_id
     uri = "#{API_ENDPOINT}/#{@system_id}/software"
-    @oauth.get(uri).body
+    response = @oauth.get(uri)
+    raise AuthorizationError, response.body if response.is_a? Net::HTTPUnauthorized
+    raise RateLimitError if response.is_a? Net::HTTPTooManyRequests 
+    raise ServerError if response.is_a? Net::HTTPServerError
+    response.body
   end
 
-  # Get info and current values of the requested parameters
+  # Get info and current values of the requested parameters,
+  # or set parameters if a hash is provided as argument
   def parameters(parameters)
     return false unless @system_id
     uri = "#{API_ENDPOINT}/#{@system_id}/parameters"
-    @oauth.get(uri, 'parameterIds' => parameters).body
-  end
-
-  # Set new values for settings
-  def set_parameters(parameters = {})
-    return false unless @system_id
-    uri = "#{API_ENDPOINT}/#{@system_id}/parameters"
-
-    body = { settings: parameters }
-    extheader = { 'content-type' => 'application/json' }
-    @oauth.put(uri, body.to_json, extheader).body
+    response = nil
+    if parameters.is_a?(Hash)
+      body = { settings: parameters }
+      extheader = { 'content-type' => 'application/json' }
+      response = @oauth.put(uri, body.to_json, extheader)
+    else
+      response = @oauth.get(uri, 'parameterIds' => parameters)
+    end
+    raise AuthorizationError, response.body if response.is_a? Net::HTTPUnauthorized
+    raise RateLimitError if response.is_a? Net::HTTPTooManyRequests 
+    raise ServerError if response.is_a? Net::HTTPServerError
+    response.body
   end
 
   # Get notifications/alarms registered on the system
   def notifications
     return false unless @system_id
     uri = "#{API_ENDPOINT}/#{@system_id}/notifications"
-    @oauth.get(uri).body
+    response = @oauth.get(uri)
+    raise AuthorizationError, response.body if response.is_a? Net::HTTPUnauthorized
+    raise RateLimitError if response.is_a? Net::HTTPTooManyRequests 
+    raise ServerError if response.is_a? Net::HTTPServerError
+    response.body
   end
 
   # Get info on the system. If arg is set to true it returns parameters for all systems,
@@ -90,38 +119,48 @@ class NibeUplink
     uri = "#{API_ENDPOINT}/#{@system_id}/serviceinfo/categories"
     uri += "/#{arg}" if arg.is_a? String
     query = { 'parameters' => true } if arg && !arg.is_a?(String)
-    @oauth.get(uri, query).body
+    response = @oauth.get(uri, query)
+    raise AuthorizationError, response.body if response.is_a? Net::HTTPUnauthorized
+    raise RateLimitError if response.is_a? Net::HTTPTooManyRequests 
+    raise ServerError if response.is_a? Net::HTTPServerError
+    response.body
   end
 
-  # Get the smarthome mode
-  def home_mode
+  # Get or set the smarthome mode
+  def mode(mode = nil)
     return false unless @system_id
     uri = "#{API_ENDPOINT}/#{@system_id}/smarthome/mode"
-    @oauth.get(uri).body
+    response = nil
+    if mode
+      body = { mode: mode }
+      extheader = { 'content-type' => 'application/json' }
+      response = @oauth.put(uri, body.to_json, extheader)
+    else
+      response = @oauth.get(uri)
+    end
+    raise AuthorizationError, response.body if response.is_a? Net::HTTPUnauthorized
+    raise RateLimitError if response.is_a? Net::HTTPTooManyRequests 
+    raise ServerError if response.is_a? Net::HTTPServerError
+    response.body
   end
 
-  # Set the smart home mode
-  def set_home_mode(mode)
-    return false unless @system_id
-    uri = "#{API_ENDPOINT}/#{@system_id}/smarthome/mode"
-    body = { mode: mode }
-    extheader = { 'content-type' => 'application/json' }
-    @oauth.put(uri, body.to_json, extheader)
-  end
-
-  # Get all registered smart home thermostats
-  def thermostats
-    return false unless @system_id
-    uri = "#{API_ENDPOINT}/#{@system_id}/smarthome/thermostats"
-    @oauth.get(uri).body
-  end
-
-  # Create or update a smart home thermostat
-  def set_thermostat(id, name, values = {})
+  # Get all registered smart home thermostats if no arguments are passed,
+  # or create/update a smart home thermostat with the provided values
+  def thermostats(values = {})
     return false unless @system_id
     uri = "#{API_ENDPOINT}/#{@system_id}/smarthome/thermostats"
-    body = { externalId: id, name: name }.merge(values)
-    extheader = { 'content-type' => 'application/json' }
-    @oauth.post(uri, body.to_json, extheader)
+    response = nil
+    if values.empty?
+      response = @oauth.get(uri)
+    else
+      raise ArgumentError, '`values` must contain externalId and name' if values['externalId'].nil? || values['name'].nil?
+      extheader = { 'content-type' => 'application/json' }
+      response = @oauth.post(uri, values.to_json, extheader)
+      return response.message
+    end
+    raise AuthorizationError, response.body if response.is_a? Net::HTTPUnauthorized
+    raise RateLimitError if response.is_a? Net::HTTPTooManyRequests 
+    raise ServerError if response.is_a? Net::HTTPServerError
+    response.body
   end
 end
