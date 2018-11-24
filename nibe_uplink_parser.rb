@@ -50,7 +50,7 @@ module NibeUplinkParser
   end
 
   def parse_system(json)
-    hash = JSON.parse(json).select { |k| k == 'lastActivityDate' || k == 'connectionStatus' || k == 'hasAlarmed' }
+    hash = JSON.parse(json).select { |k| %w[lastActivityDate connectionStatus hasAlarmed].include? k }
     hash['Alarm'] = @uplink.notifications if hash['hasAlarmed']
     hash['hasAlarmed'] = hash['hasAlarmed'] ? 'ON' : 'OFF'
     hash['connectionStatus'] = case hash['connectionStatus']
