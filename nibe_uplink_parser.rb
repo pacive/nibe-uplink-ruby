@@ -1,7 +1,9 @@
 # nibe_uplink_parser.rb
 # frozen_string_literal: true
 
+# Helper methods for interfacing nibe uplink with OpenHAB
 module NibeUplinkParser
+  # Splits parameters into smaller arrays to comply with the nibe uplink API
   def split_parameters(par)
     pages = (par.size - 1) / 15 + 1
     parameters = []
@@ -13,6 +15,8 @@ module NibeUplinkParser
     parameters
   end
 
+  # Parses the returned parameters from Nibe Uplink and puts into a hash
+  # of parameterId => value
   def parse_parameters(json)
     hash = JSON.parse(json)
     result = {}
@@ -20,6 +24,7 @@ module NibeUplinkParser
     result
   end
 
+  # Convert raw values to correct decimal value
   def convert_parameters(hash)
     hash.update(hash) do |k, v|
       case k
@@ -34,6 +39,7 @@ module NibeUplinkParser
     hash
   end
 
+  # Creates a hash with ON or OFF values based on active modules
   def parse_status(json)
     hash = JSON.parse(json)
     result = {
@@ -49,6 +55,8 @@ module NibeUplinkParser
     result.transform_keys! { |k| k.delete(' ').capitalize }
   end
 
+  # Converts values returned fron Nibe Uplink 'status' endpoint
+  # to values readable by OpenHAB 
   def parse_system(json)
     hash = JSON.parse(json).select { |k| %w[lastActivityDate connectionStatus hasAlarmed].include? k }
     hash['Alarm'] = @uplink.notifications if hash['hasAlarmed']
@@ -62,6 +70,8 @@ module NibeUplinkParser
     hash.transform_keys!(&:capitalize)
   end
 
+  # Converts values returned fron Nibe Uplink 'software' endpoint
+  # to values readable by OpenHAB 
   def parse_software(json)
     hash = JSON.parse(json)
     if hash['upgrade'].nil?
@@ -72,6 +82,7 @@ module NibeUplinkParser
     end
   end
 
+  # Convert incoming mqtt messages from OpenHAB to send to Nibe Uplink
   def parse_mqtt(topic, message)
     command = topic.split('/')
     command[0, 3] = command[2].downcase.to_sym
