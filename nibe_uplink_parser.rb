@@ -56,7 +56,7 @@ module NibeUplinkParser
   end
 
   # Converts values returned fron Nibe Uplink 'status' endpoint
-  # to values readable by OpenHAB 
+  # to values readable by OpenHAB
   def parse_system(json)
     hash = JSON.parse(json).select { |k| %w[lastActivityDate connectionStatus hasAlarmed].include? k }
     hash['Alarm'] = @uplink.notifications if hash['hasAlarmed']
@@ -71,7 +71,7 @@ module NibeUplinkParser
   end
 
   # Converts values returned fron Nibe Uplink 'software' endpoint
-  # to values readable by OpenHAB 
+  # to values readable by OpenHAB
   def parse_software(json)
     hash = JSON.parse(json)
     if hash['upgrade'].nil?
