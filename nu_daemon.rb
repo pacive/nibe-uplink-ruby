@@ -26,7 +26,10 @@ class NibeUplinkDaemon
                              client_id: 'Nibeuplink')
     @mqtt.connect
   rescue StandardError => e
-    @log.error "Exception occurred:\n#{e.inspect}"
+    @log.error "Exception occurred: #{e.inspect}"
+    reconnect_mqtt
+  rescue MQTT::Exception => e
+    @log.error "Exception occurred: #{e.inspect}"
     reconnect_mqtt
   end
 
@@ -44,10 +47,6 @@ class NibeUplinkDaemon
     @mqtt.disconnect
     @log.debug { 'Exiting!' }
     Kernel.exit
-  rescue StandardError => e
-    @log.error "Exception occurred:\n#{e.inspect}"
-  rescue MQTT::Exception => e
-    @log.error "MQTT Exception:\n#{e.inspect}"
   end
 
   private
@@ -56,7 +55,6 @@ class NibeUplinkDaemon
     loop do
       start_time = Time.now
       reload_config if config_changed?
-      @mqtt.connect unless @mqtt.connected?
       @parameters.each do |a|
         Thread.new { parameters(a) }
         sleep 5
@@ -69,6 +67,13 @@ class NibeUplinkDaemon
         Thread.new { software }
         sleep 5
       end
+    rescue StandardError => e
+      @log.error "Exception occurred:\n#{e.inspect}"
+      next
+    rescue MQTT::Exception => e
+      @log.error "MQTT Exception in work:\n#{e.inspect}"
+      reconnect_mqtt
+      next
     end
   end
 
@@ -79,7 +84,11 @@ class NibeUplinkDaemon
       @log.info { "Setting #{command[0]}: #{command[1]}" } unless command[0] == :thermostats
       @uplink.send(*command)
     rescue StandardError => e
-      @log.error e.message
+      @log.error "Exception occurred:\n#{e.inspect}"
+      next
+    rescue MQTT::Exception => e
+      @log.error "MQTT Exception in listener:\n#{e.inspect}"
+      reconnect_mqtt
       next
     end
   end
@@ -116,8 +125,6 @@ class NibeUplinkDaemon
     @log.debug { e.inspect }
   rescue NibeUplinkError => e
     @log.warn { e.inspect }
-  rescue StandardError => e
-    @log.debug { e.inspect }
   end
 
   def status
@@ -131,8 +138,6 @@ class NibeUplinkDaemon
     @log.debug { e.inspect }
   rescue NibeUplinkError => e
     @log.warn { e.inspect }
-  rescue StandardError => e
-    @log.debug { e.inspect }
   end
 
   def system
@@ -147,8 +152,6 @@ class NibeUplinkDaemon
     @log.debug { e.inspect }
   rescue NibeUplinkError => e
     @log.warn { e.inspect }
-  rescue StandardError => e
-    @log.debug { e.inspect }
   end
 
   def software
@@ -159,14 +162,13 @@ class NibeUplinkDaemon
     @log.debug { e.inspect }
   rescue NibeUplinkError => e
     @log.warn { e.inspect }
-  rescue StandardError => e
-    @log.debug { e.inspect }
   end
 
   def reconnect_mqtt(init_timeout = 1)
-    @log.warn "Connection error, retrying in #{init_timeout}s"
+    @log.info "MQTT connection lost, retrying in #{init_timeout}s"
     sleep init_timeout
     @mqtt.connect
+    @log.info 'Reconnect successful'
   rescue StandardError
     (init_timeout * 2) < 60 ? reconnect_mqtt(init_timeout * 2) : reconnect_mqtt(60)
   rescue MQTT::Exception
