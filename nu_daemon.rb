@@ -163,11 +163,9 @@ class NibeUplinkDaemon
     @log.info "MQTT connection lost, retrying in #{init_timeout}s"
     sleep init_timeout
     @mqtt.connect
-    @log.info 'Reconnect successful'
     @mqtt.subscribe('Nibeuplink/Set/#')
-  rescue StandardError
-    (init_timeout * 2) < 60 ? reconnect_mqtt(init_timeout * 2) : reconnect_mqtt(60)
-  rescue MQTT::Exception
+    @log.info 'Reconnect successful'
+  rescue StandardError, MQTT::Exception
     (init_timeout * 2) < 60 ? reconnect_mqtt(init_timeout * 2) : reconnect_mqtt(60)
   end
 
