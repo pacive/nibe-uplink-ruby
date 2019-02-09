@@ -11,50 +11,44 @@ require_relative 'nibe_uplink_parser'
 class NibeUplinkDaemon
   include NibeUplinkParser
 
-  attr_accessor :log, :interval
-
   def initialize(config_file)
     @config_file = config_file
-    @config = YAML.load_file(@config_file)
+    @log = Logger.new($stdout, progname: 'NibeUplink', formatter: proc { |severity, datetime, progname, msg|
+      "#{severity} -- #{progname}: #{msg}\n"
+    })
+    load_config(@config_file)
     @uplink = NibeUplink.new(@config[:client_id], @config[:client_secret], @config[:system_id])
     @parameters = split_parameters(@config[:parameters])
-    @log = Logger.new($stdout, level: Logger::INFO, progname: 'NibeUplink')
-    @interval = 60
     @mqtt = MQTT::Client.new(host: @config[:mqtt_host],
                              username: @config[:mqtt_username],
                              password: @config[:mqtt_password],
                              client_id: 'Nibeuplink')
-    @mqtt.connect
-  rescue StandardError => e
-    @log.error "Exception occurred: #{e.inspect}"
-    reconnect_mqtt
-  rescue MQTT::Exception => e
-    @log.error "Exception occurred: #{e.inspect}"
-    reconnect_mqtt
   end
 
   def run!
     @log.info 'Starting Nibe uplink connection...'
-    listener = Thread.new { listen }
+    @mqtt.connect
+    @listener = Thread.new { listen }
     work
-  rescue SignalException
-    @log.warn 'Terminating...'
-    @log.debug { 'Waiting for threads...' }
-    sleep 0.01 while Thread.list.size > 3
-    @log.debug { 'Stopping listener...' }
-    listener.exit
-    @log.debug { 'Disconnecting from MQTT...' }
+  rescue Errno::EPIPE
+    @listener.exit
     @mqtt.disconnect
-    @log.debug { 'Exiting!' }
-    Kernel.exit
+    retry
+  rescue StandardError, MQTT::Exception => e
+    @log.error "Exception occurred: #{e.inspect}"
+    reconnect_mqtt
+  rescue SignalException => e
+    graceful_shutdown
   end
 
   private
 
   def work
+    @log.debug { 'Starting worker' }
     loop do
       start_time = Time.now
       reload_config if config_changed?
+      @mqtt.connect unless @mqtt.connected?
       @parameters.each do |a|
         Thread.new { parameters(a) }
         sleep 5
@@ -62,45 +56,53 @@ class NibeUplinkDaemon
       Thread.new { status }
       sleep 5
       Thread.new { system }
-      sleep(start_time + @interval - Time.now)
-      if Time.now - Time.new(start_time.year, start_time.month, start_time.day) < @interval * 2
+      start_time + @config[:interval] > Time.now + 5 ? sleep(start_time + @config[:interval] - Time.now) : sleep(5)
+      if Time.now - Time.new(start_time.year, start_time.month, start_time.day) < @config[:interval] * 2
         Thread.new { software }
         sleep 5
       end
-    rescue StandardError => e
-      @log.error "Exception occurred:\n#{e.inspect}"
-      next
-    rescue MQTT::Exception => e
-      @log.error "MQTT Exception in work:\n#{e.inspect}"
+    rescue MQTT::Exception, Errno::ECONNREFUSED, Errno::ECONNRESET => e
+      @log.error "MQTT Exception in worker:\n#{e.inspect}"
       reconnect_mqtt
+      next
+    rescue StandardError => e
+      @log.error "Exception in worker:\n#{e.inspect}\n#{e.backtrace_locations.join("\n")}"
+      raise e if e.is_a? Errno::EPIPE
       next
     end
   end
 
   def listen
+    @log.debug { 'Starting listener' }
     @mqtt.subscribe('Nibeuplink/Set/#')
-    @mqtt.get do |topic, message|
+    loop do
+      sleep(1) while !@mqtt.connected?
+      topic, message = @mqtt.get
       command = parse_mqtt(topic, message)
-      @log.info { "Setting #{command[0]}: #{command[1]}" } unless command[0] == :thermostats
+      @log.debug { "Setting #{command[0]}: #{command[1]}" }
       @uplink.send(*command)
     rescue StandardError => e
-      @log.error "Exception occurred:\n#{e.inspect}"
+      @log.error "Exception in listener:\n#{e.inspect}"
       next
     rescue MQTT::Exception => e
       @log.error "MQTT Exception in listener:\n#{e.inspect}"
-      reconnect_mqtt
       next
     end
   end
 
   def config_changed?
-    Time.now - File.mtime(@config_file) < @interval * 1.5
+    Time.now - File.mtime(@config_file) < @config[:interval] * 1.5
+  end
+
+  def load_config(config_file)
+    @config = YAML.load_file(config_file)
+    @parameters = split_parameters(@config[:parameters])
+    @log.level = @config[:log_level]
   end
 
   def reload_config
     @log.info 'Config changed, reloading...'
-    @config = YAML.load_file(@config_file)
-    @parameters = split_parameters(@config[:parameters])
+    load_config(@config_file)
     return if @mqtt.username == @config[:mqtt_username] &&
               @mqtt.password == @config[:mqtt_password] &&
               @mqtt.host == @config[:mqtt_host]
@@ -116,11 +118,9 @@ class NibeUplinkDaemon
   def parameters(array)
     res = parse_parameters(@uplink.parameters(array))
     out = convert_parameters(res)
-    @log.debug 'Got parameters from Nibe uplink, publishing to MQTT...'
     out.each do |k, v|
       @mqtt.publish("Nibeuplink/Parameters/#{k}", v)
     end
-    @log.debug 'Done!'
   rescue ServerError => e
     @log.debug { e.inspect }
   rescue NibeUplinkError => e
@@ -129,11 +129,9 @@ class NibeUplinkDaemon
 
   def status
     out = parse_status(@uplink.status)
-    @log.debug 'Got status from Nibe uplink, publishing to MQTT...'
     out.each do |k, v|
       @mqtt.publish("Nibeuplink/Status/#{k}", v)
     end
-    @log.debug 'Done!'
   rescue ServerError => e
     @log.debug { e.inspect }
   rescue NibeUplinkError => e
@@ -142,12 +140,10 @@ class NibeUplinkDaemon
 
   def system
     out = parse_system(@uplink.system)
-    @log.debug 'Got system info from Nibe uplink, publishing to MQTT...'
     out.each do |k, v|
       @mqtt.publish("Nibeuplink/System/#{k}", v)
     end
     @mqtt.publish('Nibeuplink/Service/Heartbeat', 'ON')
-    @log.debug 'Done!'
   rescue ServerError => e
     @log.debug { e.inspect }
   rescue NibeUplinkError => e
@@ -155,7 +151,6 @@ class NibeUplinkDaemon
   end
 
   def software
-    @log.debug 'Checking for software upgrade...'
     upgrade = parse_software(@uplink.software)
     @mqtt.publish('Nibeuplink/Software', upgrade)
   rescue ServerError => e
@@ -169,15 +164,25 @@ class NibeUplinkDaemon
     sleep init_timeout
     @mqtt.connect
     @log.info 'Reconnect successful'
+    @mqtt.subscribe('Nibeuplink/Set/#')
   rescue StandardError
     (init_timeout * 2) < 60 ? reconnect_mqtt(init_timeout * 2) : reconnect_mqtt(60)
   rescue MQTT::Exception
     (init_timeout * 2) < 60 ? reconnect_mqtt(init_timeout * 2) : reconnect_mqtt(60)
   end
+
+  def graceful_shutdown
+    @log.warn 'Terminating...'
+    @log.debug { 'Waiting for threads...' }
+    sleep 0.01 while Thread.list.size > 3
+    @log.debug { 'Stopping listener...' }
+    @listener.exit
+    @log.debug { 'Disconnecting from MQTT...' }
+    @mqtt.disconnect
+    @log.debug { 'Exiting!' }
+    Kernel.exit
+  end
 end
 
 $stdout.sync = true
-daemon = NibeUplinkDaemon.new('/home/openhabian/ruby/nibe_uplink/nibe_uplink.conf')
-daemon.log.level = Logger::DEBUG if ARGV.include? '--debug'
-daemon.interval = 20
-daemon.run!
+NibeUplinkDaemon.new('/home/openhabian/ruby/nibe_uplink/nibe_uplink.conf').run!
