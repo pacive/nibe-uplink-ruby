@@ -13,7 +13,7 @@ class NibeUplinkDaemon
 
   def initialize(config_file)
     @config_file = config_file
-    @log = Logger.new($stdout, progname: 'NibeUplink', formatter: proc { |severity, datetime, progname, msg|
+    @log = Logger.new($stdout, progname: 'NibeUplink', formatter: proc { |severity, _datetime, progname, msg|
       "#{severity} -- #{progname}: #{msg}\n"
     })
     load_config(@config_file)
@@ -68,6 +68,7 @@ class NibeUplinkDaemon
     rescue StandardError => e
       @log.error "Exception in worker:\n#{e.inspect}\n#{e.backtrace_locations.join("\n")}"
       raise e if e.is_a? Errno::EPIPE
+
       next
     end
   end
@@ -76,7 +77,7 @@ class NibeUplinkDaemon
     @log.debug { 'Starting listener' }
     @mqtt.subscribe('Nibeuplink/Set/#')
     loop do
-      sleep(1) while !@mqtt.connected?
+      sleep(1) until @mqtt.connected?
       topic, message = @mqtt.get
       command = parse_mqtt(topic, message)
       @log.debug { "Setting #{command[0]}: #{command[1]}" }
@@ -183,4 +184,4 @@ class NibeUplinkDaemon
 end
 
 $stdout.sync = true
-NibeUplinkDaemon.new('/home/openhabian/ruby/nibe_uplink/nibe_uplink.conf').run!
+NibeUplinkDaemon.new(ARGV[0]).run!
