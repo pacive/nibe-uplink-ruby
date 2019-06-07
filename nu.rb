@@ -134,6 +134,7 @@ class NibeUplinkInterface
   end
 
   def serviceinfo
+    @options[:parameters] = true if @options[:parameters] == 'true'
     if @options[:values]
       NibeUplinkHelper.get_values(@nu.serviceinfo(@options[:parameters]), @options[:values]).to_json
     else
@@ -185,8 +186,8 @@ class NibeUplinkInterface
 end
 
 nu = nil
-if File.exist?('/var/lib/openhab2/nibe_uplink.conf')
-  config = YAML.load_file('/var/lib/openhab2/nibe_uplink.conf')
+if File.exist?('./nibe_uplink.conf')
+  config = YAML.load_file('./nibe_uplink.conf')
   nu = NibeUplink.new(config[:client_id], config[:client_secret], config[:system_id])
 end
 nui = NibeUplinkInterface.new(nu)
