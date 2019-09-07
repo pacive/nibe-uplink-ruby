@@ -146,5 +146,7 @@ class NibeUplink
     raise ServerError, "Response code: #{res.code}" if res.is_a? Net::HTTPServerError
 
     res
+  rescue Net::ReadTimeout => e
+    raise ServerError, e.message
   end
 end
