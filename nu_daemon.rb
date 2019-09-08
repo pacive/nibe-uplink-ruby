@@ -120,7 +120,7 @@ class NibeUplinkDaemon
     res = parse_parameters(@uplink.parameters(array))
     out = convert_parameters(res)
     out.each do |k, v|
-      @mqtt.publish("Nibeuplink/Parameters/#{k}", v)
+      @mqtt.publish("Nibeuplink/Parameters/#{k}", v, true)
     end
   rescue ServerError => e
     @log.debug { e.inspect }
@@ -131,7 +131,7 @@ class NibeUplinkDaemon
   def status
     out = parse_status(@uplink.status)
     out.each do |k, v|
-      @mqtt.publish("Nibeuplink/Status/#{k}", v)
+      @mqtt.publish("Nibeuplink/Status/#{k}", v, true)
     end
   rescue ServerError => e
     @log.debug { e.inspect }
@@ -142,7 +142,7 @@ class NibeUplinkDaemon
   def system
     out = parse_system(@uplink.system)
     out.each do |k, v|
-      @mqtt.publish("Nibeuplink/System/#{k}", v)
+      @mqtt.publish("Nibeuplink/System/#{k}", v, true)
     end
     @mqtt.publish('Nibeuplink/Service/Heartbeat', 'ON')
   rescue ServerError => e
@@ -153,7 +153,7 @@ class NibeUplinkDaemon
 
   def software
     upgrade = parse_software(@uplink.software)
-    @mqtt.publish('Nibeuplink/Software', upgrade)
+    @mqtt.publish('Nibeuplink/Software', upgrade, true)
   rescue ServerError => e
     @log.debug { e.inspect }
   rescue NibeUplinkError => e

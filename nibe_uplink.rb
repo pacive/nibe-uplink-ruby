@@ -143,7 +143,7 @@ class NibeUplink
           end
     raise AuthorizationError, res.body if res.is_a? Net::HTTPUnauthorized
     raise RateLimitError if res.is_a? Net::HTTPTooManyRequests
-    raise ServerError, "Response code: #{res.code}" if res.is_a? Net::HTTPServerError
+    raise ServerError, "#{res.code} #{res.msg}" if res.is_a? Net::HTTPServerError
 
     res
   rescue Net::ReadTimeout => e
