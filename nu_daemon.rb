@@ -81,7 +81,8 @@ class NibeUplinkDaemon
       topic, message = @mqtt.get
       command = parse_mqtt(topic, message)
       @log.debug { "Setting #{command[0]}: #{command[1]}" }
-      @uplink.send(*command)
+      response = @uplink.send(*command)
+      @log.debug { response }
     rescue StandardError => e
       @log.error "Exception in listener:\n#{e.inspect}"
       next
